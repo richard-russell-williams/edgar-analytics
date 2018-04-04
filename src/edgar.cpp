@@ -73,7 +73,7 @@ int main(int argc, char* argv[]) {
 	time_t stime;
 	std::vector<session_entry> session;
 	session_entry temp_entry;
-	char temp_line[256], temp_ip[256], temp_date[256], temp_time[256];
+	char temp_line[256], temp_ip[256], temp_date[256], temp_time[256], old_date [256], old_time [256];
 	char* temp;
 	int ip_index = -1, date_index = -1, time_index = -1, token_no, found, inactivity_time, line_no, status;
 	unsigned int i, max_index;
@@ -140,6 +140,9 @@ int main(int argc, char* argv[]) {
 	if (date_index > max_index) max_index = date_index;
 	if (time_index > max_index) max_index = time_index;
 
+	strcpy (old_date, "");
+	strcpy (old_time, "");
+
 	line_no = 0;
 	while (fgets(temp_line, 255, log_file) != NULL) {  // run until end of file
 
@@ -168,19 +171,24 @@ int main(int argc, char* argv[]) {
 		// we now have a new entry stored in: temp_ip, temp_date, temp_time
 
 		// convert calender time in log file into seconds since 1970
-		stime = calender_to_timet (temp_date, temp_time);
+		if ((strcmp(temp_date, old_date) != 0) || (strcmp(temp_time, old_time) != 0)) { //  new time???
+			stime = calender_to_timet(temp_date, temp_time);
 
-		// check for sessions that have expired using the new time
-		i = 0;
-		found = false;
-		while (i < session.size()) {
-			if (stime - session[i].last_time > inactivity_time) { // expired
-				print_entry(session[i], output_file);
-				session.erase(session.begin() + i);
-			} else {
-				i = i + 1;
+			strcpy(old_date, temp_date); // save for next loop
+			strcpy(old_time, temp_time);
+
+			// check for sessions that have expired using the new time
+			i = 0;
+			found = false;
+			while (i < session.size()) {
+				if (stime - session[i].last_time > inactivity_time) { // expired
+					print_entry(session[i], output_file);
+					session.erase(session.begin() + i);
+				} else {
+					i = i + 1;
+				}
 			}
-		}
+		};
 
 		// find whether or not a session with this ip address already exists
 		found = false; 
@@ -191,16 +199,15 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		if (!found) { // add this new entry into the sessions vector
-			strcpy(temp_entry.ip, temp_ip);
+		if (found) {  // an entry already exists
+			session[i].sessions += 1;
+			session[i].last_time = stime;
+		} else {
+			strcpy(temp_entry.ip, temp_ip); // add this new entry into the sessions vector
 			temp_entry.start_time = stime;
 			temp_entry.last_time  = stime;
 			temp_entry.sessions   = 1;
-
 			session.push_back(temp_entry);
-		} else { // an entry already exists
-			session[i].sessions += 1;
-			session[i].last_time = stime;
 		}
 
 		// Keep track of the current input line.  For debugging purposes only.
