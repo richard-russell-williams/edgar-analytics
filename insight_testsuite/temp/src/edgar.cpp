@@ -15,6 +15,8 @@
 // assume EDGAR replace for last three characters of IP is three characters.
 // fopen is only for 32-bit files.  Need to use file64 for very large files.
 // two sessions loops could be combined into one for some performance gain.
+// my tests are not in testsuite because they are too large for github
+// github has a maximum size of 100 MB.
 
 typedef struct {
 	char   ip [16];       // ip address of session
@@ -24,19 +26,26 @@ typedef struct {
 } session_entry;
 
 // parse calender string into a tm struct
-void string_parse (const char* date, const char* time, struct tm* tm) {
+static time_t calender_to_timet (const char* date, const char* time) {
+	time_t stime;
+	struct tm cal_time;
+	int status;
 
-	memset(tm, 0, sizeof(struct tm));
+	memset(&cal_time, 0, sizeof(cal_time));
 
-	sscanf(date, "%4d-%2d-%2d", &(tm->tm_year), &(tm->tm_mon), &(tm->tm_yday));
-	sscanf(time, "%2d:%2d:%2d", &(tm->tm_hour), &(tm->tm_min), &(tm->tm_sec));
+	status = sscanf(date, "%4d-%2d-%2d", &(cal_time.tm_year), &(cal_time.tm_mon), &(cal_time.tm_yday));
+	status = sscanf(time, "%2d:%2d:%2d", &(cal_time.tm_hour), &(cal_time.tm_min), &(cal_time.tm_sec));
 
-	tm->tm_isdst = -1;
-	tm->tm_year -= 1900;
+	cal_time.tm_isdst = -1;
+	cal_time.tm_year -= 1900;
+
+	stime = mktime(&cal_time);
+
+	return stime;
 }
 
 // output session entry to output file
-void print_entry(session_entry session_entry, FILE* out_file) {
+static void print_entry(session_entry session_entry, FILE* out_file) {
 	struct tm* temp_tm_ptr;
 	char session_start[256], session_end[256];
 	time_t diff_time;
@@ -45,8 +54,12 @@ void print_entry(session_entry session_entry, FILE* out_file) {
 	temp_tm_ptr = localtime(&session_entry.start_time);
 	length = strftime(session_start, 255, "%Y-%m-%d %H:%M:%S", temp_tm_ptr);
 
-	temp_tm_ptr = localtime(&session_entry.last_time);
-	length = strftime(session_end, 255, "%Y-%m-%d %H:%M:%S", temp_tm_ptr);
+	if (session_entry.start_time == session_entry.last_time) {
+		strcpy(session_end, session_start);
+	} else {
+		temp_tm_ptr = localtime(&session_entry.last_time);
+		length = strftime(session_end, 255, "%Y-%m-%d %H:%M:%S", temp_tm_ptr);
+	}
 
 	diff_time = session_entry.last_time - session_entry.start_time + 1;
 
@@ -58,17 +71,16 @@ int main(int argc, char* argv[]) {
 	FILE* inactivity_file;           // file for inactivity counter
  	FILE* output_file;               // output sessions file
 	time_t stime;
-	struct tm cal_time;
 	std::vector<session_entry> session;
 	session_entry temp_entry;
-	char temp_line[256], temp_ip[256], temp_date[256], temp_time[256];
+	char temp_line[256], temp_ip[256], temp_date[256], temp_time[256], old_date [256], old_time [256];
 	char* temp;
-	int ip_index = -1, date_index = -1, time_index = -1, token_no, found, inactivity_time, line_no, done, status;
-	unsigned int i;
+	int ip_index = -1, date_index = -1, time_index = -1, token_no, found, inactivity_time, line_no, status;
+	unsigned int i, max_index;
 	char log_filename [256], inactivity_filename [256], sessionization_filename[256];
 
 	if (argc < 4) {
-		printf("Usage: process log.csv inactivity_period.txt sessionization.txt");
+		printf("Usage: process log.csv inactivity_period.txt sessionization.txt\n");
 		return 1;
 	}
 
@@ -123,21 +135,25 @@ int main(int argc, char* argv[]) {
 		return 3;
 	}
 
+	// find maximum required index
+	max_index = ip_index;
+	if (date_index > max_index) max_index = date_index;
+	if (time_index > max_index) max_index = time_index;
+
+	strcpy (old_date, "");
+	strcpy (old_time, "");
+
 	line_no = 0;
-	done = false;
-	while (!done) {
+	while (fgets(temp_line, 255, log_file) != NULL) {  // run until end of file
 
-		// get next line
-		if (fgets(temp_line, 255, log_file) == NULL) break;
-
-		// guard against premature terminate of an input line
-		strcpy(temp_ip, "");
+		// guard against premature termination of an input line
+		strcpy(temp_ip,   "");
 		strcpy(temp_date, "");
 		strcpy(temp_time, "");
 
 		token_no = 0;
 		temp = strtok(temp_line, ",");
-		do {
+		for (i = 0; i <= max_index; i = i + 1) {
 			if (token_no == ip_index) { // look for matches
 				strcpy(temp_ip, temp);
 			} else if (token_no == date_index) {
@@ -147,27 +163,32 @@ int main(int argc, char* argv[]) {
 			}
 
 			temp = strtok(NULL, ",");
-			token_no += 1;
-		} while (temp != NULL);
+			if (temp == NULL) break;  // early line termination
 
-		// now have a new entry stored in: temp_ip, temp_date, temp_time
+			token_no += 1;
+		};
+
+		// we now have a new entry stored in: temp_ip, temp_date, temp_time
 
 		// convert calender time in log file into seconds since 1970
-		memset(&cal_time, 0, sizeof(struct tm));
-		string_parse(temp_date, temp_time, &cal_time);
-		stime = mktime(&cal_time);
+		if ((strcmp(temp_date, old_date) != 0) || (strcmp(temp_time, old_time) != 0)) { //  new time???
+			stime = calender_to_timet(temp_date, temp_time);
 
-		// check for sessions that have expired using the new time
-		i = 0;
-		found = false;
-		while (i < session.size()) {
-			if (stime - session[i].last_time > inactivity_time) { // expired
-				print_entry(session[i], output_file);
-				session.erase(session.begin() + i);
-			} else {
-				i = i + 1;
+			strcpy(old_date, temp_date); // save for next loop
+			strcpy(old_time, temp_time);
+
+			// check for sessions that have expired using the new time
+			i = 0;
+			found = false;
+			while (i < session.size()) {
+				if (stime - session[i].last_time > inactivity_time) { // expired
+					print_entry(session[i], output_file);
+					session.erase(session.begin() + i);
+				} else {
+					i = i + 1;
+				}
 			}
-		}
+		};
 
 		// find whether or not a session with this ip address already exists
 		found = false; 
@@ -178,16 +199,15 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		if (!found) { // add this new entry into the sessions vector
-			strcpy(temp_entry.ip, temp_ip);
+		if (found) {  // an entry already exists
+			session[i].sessions += 1;
+			session[i].last_time = stime;
+		} else {
+			strcpy(temp_entry.ip, temp_ip); // add this new entry into the sessions vector
 			temp_entry.start_time = stime;
 			temp_entry.last_time  = stime;
 			temp_entry.sessions   = 1;
-
 			session.push_back(temp_entry);
-		} else { // an entry already exists
-			session[i].sessions += 1;
-			session[i].last_time = stime;
 		}
 
 		// Keep track of the current input line.  For debugging purposes only.

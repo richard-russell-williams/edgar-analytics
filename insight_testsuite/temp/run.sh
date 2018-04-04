@@ -5,4 +5,4 @@
 #python ./src/sessionization.py ./input/log.csv ./input/inactivity_period.txt ./output/sessionization.txt
 
 g++ ./src/edgar.cpp -O3 -o edgar
-edgar ./input/log.csv ./input/inactivity_period.txt ./output/sessionization.txt
+./edgar ./input/log.csv ./input/inactivity_period.txt ./output/sessionization.txt
