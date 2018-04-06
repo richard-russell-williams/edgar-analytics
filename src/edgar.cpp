@@ -10,17 +10,6 @@
 // Description of this challenge are stored in README_orig.md
 // My comments about this challenge are stored in README.md
 
-// Assumptions: much faster if assume session is less than one day
-// Could use strptime, but not portable.  Not available on Windows and some other systems.
-// keep sessions data structure small in order to be faster on very large data sets
-// calculation of diff time is wrong.  Should subtract one second.
-// there is a counter "line_no" in the code that is never used.  It's purpose is solely for debugging.
-// assume EDGAR replace for last three characters of IP is three characters.
-// fopen is only for 32-bit files.  Need to use file64 for very large files.
-// two sessions loops could be combined into one for some performance gain.
-// my tests are not in testsuite because they are too large for github
-// github has a maximum size of 100 MB.
-
 typedef struct {
 	char   ip [16];       // ip address of session
 	time_t start_time;    // session start time
