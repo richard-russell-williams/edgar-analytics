@@ -11,3 +11,5 @@
 *.obj
 *.ipdb
 *.idb
+*.vspx
+*.vsp

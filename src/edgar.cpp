@@ -7,6 +7,9 @@
 
 #pragma warning (disable : 4996)
 
+// Description of this challenge are stored in README_orig.md
+// My comments about this challenge are stored in README.md
+
 // Assumptions: much faster if assume session is less than one day
 // Could use strptime, but not portable.  Not available on Windows and some other systems.
 // keep sessions data structure small in order to be faster on very large data sets
